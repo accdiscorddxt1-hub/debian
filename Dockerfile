@@ -1,19 +1,57 @@
-FROM debian
+FROM debian:bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Thêm kiến trúc i386 cho wine32
 RUN dpkg --add-architecture i386
-RUN apt update
-RUN DEBIAN_FRONTEND=noninteractive apt install wine qemu-kvm *zenhei* xz-utils dbus-x11 curl firefox-esr gnome-system-monitor mate-system-monitor  git xfce4 xfce4-terminal tightvncserver wget   -y
-RUN wget https://github.com/novnc/noVNC/archive/refs/tags/v1.2.0.tar.gz
-RUN tar -xvf v1.2.0.tar.gz
-RUN mkdir  $HOME/.vnc
-RUN echo 'xt' | vncpasswd -f > $HOME/.vnc/passwd
-RUN echo '/bin/env  MOZ_FAKE_NO_SANDBOX=1  dbus-launch xfce4-session'  > $HOME/.vnc/xstartup
-RUN chmod 600 $HOME/.vnc/passwd
-RUN chmod 755 $HOME/.vnc/xstartup
-RUN echo 'whoami ' >>/luo.sh
-RUN echo 'cd ' >>/luo.sh
-RUN echo "su -l -c 'vncserver :2000 -geometry 1360x768' "  >>/luo.sh
-RUN echo 'cd /noVNC-1.2.0' >>/luo.sh
-RUN echo './utils/launch.sh  --vnc localhost:7900 --listen 8900 ' >>/luo.sh
-RUN chmod 755 /luo.sh
-EXPOSE 8900
-CMD  /luo.sh
+
+# Cập nhật và cài đặt các gói
+RUN apt update && apt install -y \
+    xrdp \
+    xfce4 \
+    xfce4-goodies \
+    xorg \
+    dbus-x11 \
+    sudo \
+    curl \
+    wget \
+    nano \
+    net-tools \
+    policykit-1 \
+    pulseaudio \
+    pulseaudio-utils \
+    wine \
+    wine32 \
+    firefox-esr \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Đặt mật khẩu cho root
+RUN echo "root:root" | chpasswd
+
+# Cấu hình X11 cho phép mọi user chạy X
+RUN sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config || echo "allowed_users=anybody" >> /etc/X11/Xwrapper.config
+
+# Tạo .xsession để khởi động XFCE
+RUN echo "startxfce4" > /root/.xsession && chmod 700 /root/.xsession
+
+# Tạo machine-id cho dbus
+RUN mkdir -p /var/run/dbus && dbus-uuidgen > /var/lib/dbus/machine-id
+
+# Cấu hình xrdp
+RUN sed -i 's/crypt_level=high/crypt_level=low/' /etc/xrdp/xrdp.ini && \
+    sed -i 's/security_layer=negotiate/security_layer=rdp/' /etc/xrdp/xrdp.ini && \
+    echo "exec startxfce4" > /etc/xrdp/startwm.sh && chmod +x /etc/xrdp/startwm.sh
+
+# Thêm user xrdp vào group ssl-cert để có quyền SSL
+RUN adduser xrdp ssl-cert
+
+# Copy script khởi động
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Mở port RDP
+EXPOSE 3389
+
+# Chạy script khởi động
+CMD ["/start.sh"]
